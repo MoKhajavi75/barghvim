@@ -30,13 +30,19 @@ func New() *gin.Engine {
 
 			outages, err := outages.Fetch(ctx.Request.Context(), token, bill)
 			if err != nil {
-				ctx.String(http.StatusInternalServerError, "upstream error")
+				ctx.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "failed to fetch outages",
+					"details": err.Error(),
+				})
 				return
 			}
 
 			icsBytes, err := calendar.BuildICS(bill, outages)
 			if err != nil {
-				ctx.String(http.StatusInternalServerError, "calendar error")
+				ctx.JSON(http.StatusInternalServerError, gin.H{
+					"error":   "failed to build calendar",
+					"details": err.Error(),
+				})
 				return
 			}
 
