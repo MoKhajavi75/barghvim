@@ -1,0 +1,15 @@
+services:
+  barghvim:
+    build:
+      context: .
+    image: barghvim:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

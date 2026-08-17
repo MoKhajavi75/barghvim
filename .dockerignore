@@ -1,0 +1,11 @@
+.git
+.github
+.claude
+assets
+bin
+coverage.out
+.env
+*.md
+Makefile
+Dockerfile
+.dockerignore
