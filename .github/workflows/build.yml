@@ -1,0 +1,151 @@
+---
+name: Build & Publish
+
+# yamllint disable-line rule:truthy
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  # Single source of truth for the toolchain. Must move together with the `go`
+  # directive in go.mod and the base image in the Dockerfile.
+  GO_VERSION: '1.26'
+
+jobs:
+  # Gate the image on the same checks `make check` runs locally. A tag that
+  # fails vet, modernize or the race detector must not produce an image.
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Lint (go vet + modernize)
+        run: make lint
+
+      - name: Test
+        run: make test
+
+  image:
+    needs: check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR image namespaces must be lowercase — the GitHub owner may not be.
+      - name: Resolve lowercase image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-,format=short
+          flavor: |
+            latest=true
+
+      # Build and boot the image before anything is published. A green `go
+      # build` is not proof the image runs: the runtime is `scratch`, so a
+      # missing CA bundle or the dropped time/tzdata import only fails at
+      # startup. The push step below is a cache hit.
+      - name: Build for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: barghvim-smoke:latest
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Needs no configuration to boot, so /healthz is enough to prove the
+      # binary started, resolved Asia/Tehran and bound its port.
+      - name: Smoke test image
+        run: |
+          docker run -d --name smoke \
+            -p 127.0.0.1:8080:8080 \
+            barghvim-smoke:latest
+          ok=
+          for _ in $(seq 1 30); do
+            if [ "$(docker inspect -f '{{.State.Running}}' smoke)" != true ]; then
+              break
+            fi
+            if [ "$(curl -so /dev/null -w '%{http_code}' \
+              http://127.0.0.1:8080/healthz)" = 200 ]; then
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          docker logs smoke
+          docker rm -f smoke >/dev/null
+          if [ -z "$ok" ]; then
+            echo "::error::image did not serve 200 on /healthz"
+            exit 1
+          fi
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          provenance: true
+          sbom: true
+
+  # Tag-only: publish a GitHub Release with a git-cliff changelog.
+  release:
+    needs: image
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    steps:
+      # Full history so git-cliff can resolve commits between tags.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip all
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          body: ${{ steps.git-cliff.outputs.content }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
