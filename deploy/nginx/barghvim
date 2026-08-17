@@ -1,0 +1,30 @@
+server {
+  listen 80;
+  server_name barghvim.ir www.barghvim.ir;
+
+  return 301 https://barghvim.ir$request_uri;
+}
+
+server {
+  listen 443 ssl;
+  server_name barghvim.ir www.barghvim.ir;
+
+  ssl_certificate         /etc/nginx/ssl/barghvim.ir/fullchain.cer;
+  ssl_certificate_key     /etc/nginx/ssl/barghvim.ir/private.key;
+
+  # Every request carries the subscriber's برق من token in the query string and
+  # their bill number in the path, because calendar clients cannot set headers
+  # on a subscription. The default `combined` format logs $request verbatim,
+  # which would write both to disk on every calendar poll — the app itself goes
+  # out of its way to keep them out of its own logs. Turn the access log off
+  # rather than undo that at the edge.
+  access_log off;
+
+  location / {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}

@@ -1,0 +1,34 @@
+---
+# Runtime compose for the target VM. Copy this file into /opt/barghvim, then:
+#   docker compose pull && docker compose up -d
+# Images are pulled from GHCR — no building on the server.
+#
+# The service is stateless: no database, no volumes, nothing to back up. The
+# subscriber's token and bill number arrive per request and are never stored.
+services:
+  barghvim:
+    image: ghcr.io/mokhajavi75/barghvim:${IMAGE_TAG:-latest}
+    container_name: barghvim
+    restart: unless-stopped
+    environment:
+      ADDR: ':8080'
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      OUTAGE_WINDOW_DAYS: ${OUTAGE_WINDOW_DAYS:-7}
+    ports:
+      # Loopback only — the host's nginx (terminating 443) is the sole public
+      # entry and proxy_passes to this port. 8080 is already taken by algofood.
+      - '127.0.0.1:${HOST_PORT:-8081}:8080'
+    networks: [barghvim]
+    # No healthcheck: the runtime image is `scratch` and carries no shell or
+    # wget to run one. The process is stateless, `restart: unless-stopped`
+    # recovers a crash, and nginx surfaces a dead upstream as 502.
+    #
+    # The binary is static and writes nothing to disk, so it needs no
+    # filesystem access and no capabilities at all.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+
+networks:
+  barghvim:
+    driver: bridge

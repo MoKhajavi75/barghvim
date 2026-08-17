@@ -62,7 +62,9 @@ make image
 docker run --rm -p 8080:8080 barghvim:dev
 ```
 
-The image is a static binary on `scratch` (~10 MB) with the timezone database compiled in, running as an unprivileged uid.
+The image is a static binary on `scratch` (~3 MB) with the timezone database compiled in, running as an unprivileged uid.
+
+For deploying to a server, see [`deploy/README.md`](deploy/README.md) — CI builds and publishes an image on every `v*` tag, and the server only pulls it.
 
 ### Configuration
 

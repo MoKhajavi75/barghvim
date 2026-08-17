@@ -74,3 +74,7 @@ Requires Go 1.26 (the `tool` directive pulls gopls, which forces it). `go.mod` a
 ## Deployment
 
 The upstream API is only reachable from inside Iran, so this cannot run on Vercel, Fly, or any foreign PaaS — it needs a host with Iranian network access. The service was previously deployed to Vercel; that path is gone and should not be restored. Configuration is environment variables only, documented in `.env.example`.
+
+Images are built by CI on `v*` tags and pushed to GHCR; nothing is ever built on the server. The VM only holds `deploy/docker-compose.yml` and an nginx vhost — see `deploy/README.md`. The root `compose.yaml` is for local use and builds from source; `deploy/docker-compose.yml` is the one that runs in production and pulls a published image. Don't merge them.
+
+The nginx vhost sets `access_log off` deliberately: the token rides in the query string and the bill number in the path, so the default `combined` format would write both to disk on every calendar poll, undoing at the edge what the app is careful about internally.
