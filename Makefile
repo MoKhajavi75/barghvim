@@ -34,15 +34,19 @@ vet:
 	go vet ./...
 
 ## modernize: report code that predates a newer stdlib idiom
+# Keyed on the exit status, not on whether anything was printed: modernize
+# writes findings to stderr and exits non-zero, but `go tool` also writes
+# "go: downloading ..." there on a cold module cache. Capturing the output and
+# testing it for emptiness reports those downloads as lint findings, which is
+# invisible locally with a warm cache and fails every clean CI run.
 modernize:
-	@out=$$(go tool modernize ./... 2>&1); \
-	if [ -n "$$out" ]; then \
-		echo "$$out"; \
+	@if go tool modernize ./...; then \
+		echo "modernize: clean"; \
+	else \
 		echo; \
 		echo "run 'make modernize-fix' to apply these"; \
 		exit 1; \
 	fi
-	@echo "modernize: clean"
 
 ## modernize-fix: apply modernize's suggestions
 modernize-fix:
