@@ -51,8 +51,12 @@ func buildICS(bill string, outages []Outage, loc *time.Location) ([]byte, error)
 		ev.SetEndAt(o.End)
 	}
 
+	// RFC 5545 §3.1 requires CRLF between content lines, but golang-ical
+	// defaults to the host OS newline — bare LF on Linux and macOS. Apple
+	// Calendar accepts that; Google Calendar subscribes to the feed and then
+	// renders nothing. Ask for CRLF explicitly rather than inherit the OS.
 	var buf bytes.Buffer
-	if err := cal.SerializeTo(&buf); err != nil {
+	if err := cal.SerializeTo(&buf, ics.WithNewLineWindows); err != nil {
 		return nil, fmt.Errorf("serializing calendar: %w", err)
 	}
 	return buf.Bytes(), nil

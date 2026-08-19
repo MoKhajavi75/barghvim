@@ -113,3 +113,32 @@ func TestEventUID(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildICSUsesCRLF(t *testing.T) {
+	loc := tehran(t)
+
+	outages := []Outage{{
+		Start: time.Date(2025, 9, 7, 9, 0, 0, 0, loc),
+		End:   time.Date(2025, 9, 7, 11, 0, 0, 0, loc),
+	}}
+
+	feed, err := buildICS("1234567890", outages, loc)
+	if err != nil {
+		t.Fatalf("buildICS() = %v", err)
+	}
+	got := string(feed)
+
+	// RFC 5545 §3.1 mandates CRLF. Google Calendar accepts an LF-only feed
+	// as a subscription and then shows no events at all.
+	if !strings.HasSuffix(got, "END:VCALENDAR\r\n") {
+		t.Errorf("feed does not end with a CRLF-terminated END:VCALENDAR:\n%q", got)
+	}
+	for i, line := range strings.Split(got, "\n") {
+		if line == "" {
+			continue // trailing element after the final CRLF
+		}
+		if !strings.HasSuffix(line, "\r") {
+			t.Errorf("line %d is not CRLF-terminated: %q", i+1, line)
+		}
+	}
+}
