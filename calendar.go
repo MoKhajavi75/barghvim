@@ -45,7 +45,11 @@ func buildICS(bill string, outages []Outage, loc *time.Location) ([]byte, error)
 		ev.SetDtStampTime(o.Start.UTC())
 		ev.SetSummary(eventSummary)
 		ev.SetStatus(ics.ObjectStatusConfirmed)
-		ev.SetClass(ics.ClassificationPrivate)
+		// No CLASS. CLASS:PRIVATE makes Google Calendar drop the event from a
+		// subscribed feed silently — it fetches the feed, answers 200, and
+		// renders nothing. Apple Calendar honours the property and displays
+		// the event, so the feed looks fine everywhere else. Bisected against
+		// live feeds that were identical but for this one line.
 		ev.SetTimeTransparency(ics.TransparencyTransparent)
 		ev.SetStartAt(o.Start)
 		ev.SetEndAt(o.End)

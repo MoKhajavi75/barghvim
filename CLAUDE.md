@@ -57,6 +57,7 @@ These are the things that will bite you, and none are visible from a single file
 ## Invariants worth preserving
 
 - **`buildICS` output must stay deterministic.** Subscribers poll constantly; identical input has to render byte-identical or every poll looks like a change. This is why `DTSTAMP` derives from the event's start rather than `time.Now()`. `TestBuildICSIsDeterministic` guards it.
+- **Never set `CLASS` on an event.** Google Calendar fetches a feed whose events carry `CLASS:PRIVATE`, answers 200, and then renders none of them — no error, no empty-calendar warning, nothing. Apple Calendar honours the property and displays the events, so the feed looks healthy in the one client you are most likely to test with. `TestBuildICSOmitsClass` pins it.
 - **Event UIDs are stable identifiers.** Changing the hash or the `@barghvim` domain in `eventUID` makes every existing subscriber's calendar duplicate its events once.
 - **Never log the raw URL.** The token has to travel in the query string because calendar clients cannot set headers on a subscription, so the request logger records `r.Pattern` (the matched route) instead of the path or query. Keep the bill number and token out of logs.
 - **Never return upstream text to callers.** `server.fail` maps `ErrUnauthorized` → 401 and `ErrUpstream` → 502, logs the full error, and writes a generic message. `TestHandleCalendarUpstreamFailures` asserts nothing leaks.

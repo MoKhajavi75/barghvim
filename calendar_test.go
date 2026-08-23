@@ -43,6 +43,26 @@ func TestBuildICS(t *testing.T) {
 	}
 }
 
+// TestBuildICSOmitsClass pins the bug that kept the feed invisible in Google
+// Calendar. Google fetches a feed whose events carry CLASS:PRIVATE, answers
+// 200, and then renders none of them; Apple Calendar displays them, so the
+// feed appears healthy everywhere the author is likely to check.
+func TestBuildICSOmitsClass(t *testing.T) {
+	loc := tehran(t)
+
+	start := time.Date(2025, 9, 7, 9, 0, 0, 0, loc)
+	outages := []Outage{{Start: start, End: start.Add(2 * time.Hour)}}
+
+	feed, err := buildICS("1234567890", outages, loc)
+	if err != nil {
+		t.Fatalf("buildICS() = %v", err)
+	}
+
+	if got := string(feed); strings.Contains(got, "CLASS:") {
+		t.Errorf("feed sets CLASS; Google Calendar drops such events from a subscription:\n%s", got)
+	}
+}
+
 func TestBuildICSEmpty(t *testing.T) {
 	loc := tehran(t)
 
