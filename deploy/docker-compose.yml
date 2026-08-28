@@ -3,8 +3,9 @@
 #   docker compose pull && docker compose up -d
 # Images are pulled from GHCR — no building on the server.
 #
-# The service is stateless: no database, no volumes, nothing to back up. The
-# subscriber's token and bill number arrive per request and are never stored.
+# The service holds no data of its own: no database, no volumes, nothing to
+# back up. Bill numbers arrive per request and are never written down. Fetched
+# outage reports are cached in memory only, and a restart simply refetches.
 services:
   barghvim:
     image: ghcr.io/mokhajavi75/barghvim:${IMAGE_TAG:-latest}
@@ -13,7 +14,8 @@ services:
     environment:
       ADDR: ':8080'
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      OUTAGE_WINDOW_DAYS: ${OUTAGE_WINDOW_DAYS:-7}
+      CACHE_TTL: ${CACHE_TTL:-6h}
+      UPSTREAM_CALLS_PER_HOUR: ${UPSTREAM_CALLS_PER_HOUR:-18}
     ports:
       # Loopback only — the host's nginx (terminating 443) is the sole public
       # entry and proxy_passes to this port. 8080 is already taken by algofood.

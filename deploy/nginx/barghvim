@@ -12,12 +12,10 @@ server {
   ssl_certificate         /etc/nginx/ssl/barghvim.ir/fullchain.cer;
   ssl_certificate_key     /etc/nginx/ssl/barghvim.ir/private.key;
 
-  # Every request carries the subscriber's برق من token in the query string and
-  # their bill number in the path, because calendar clients cannot set headers
-  # on a subscription. The default `combined` format logs $request verbatim,
-  # which would write both to disk on every calendar poll — the app itself goes
-  # out of its way to keep them out of its own logs. Turn the access log off
-  # rather than undo that at the edge.
+  # Every request carries the subscriber's bill number in the path. The default
+  # `combined` format logs $request verbatim, which would write it to disk on
+  # every calendar poll — the app itself goes out of its way to keep it out of
+  # its own logs. Turn the access log off rather than undo that at the edge.
   access_log off;
 
   location / {
