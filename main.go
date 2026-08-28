@@ -48,10 +48,16 @@ func run(ctx context.Context) error {
 	}
 
 	srv := &server{
-		outages: NewClient(loc, WithEndpoint(cfg.Endpoint), WithLogger(logger)),
+		outages: NewClient(loc,
+			WithEndpoint(cfg.Endpoint),
+			WithLogger(logger),
+			WithBudget(newBudget(cfg.CallsPerHour, time.Hour)),
+		),
+		reports: newReports(cfg.CacheTTL),
 		loc:     loc,
-		window:  cfg.Window,
+		ttl:     cfg.CacheTTL,
 		logger:  logger,
+		now:     time.Now,
 	}
 
 	httpSrv := &http.Server{
@@ -71,7 +77,7 @@ func run(ctx context.Context) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("listening", "version", version, "addr", cfg.Addr, "window", cfg.Window.String())
+		logger.Info("listening", "version", version, "addr", cfg.Addr, "cacheTTL", cfg.CacheTTL.String(), "callsPerHour", cfg.CallsPerHour)
 		errCh <- httpSrv.ListenAndServe()
 	}()
 
@@ -92,18 +98,20 @@ func run(ctx context.Context) error {
 }
 
 type config struct {
-	Addr     string
-	Endpoint string
-	Window   time.Duration
-	LogLevel slog.Level
+	Addr         string
+	Endpoint     string
+	CacheTTL     time.Duration
+	CallsPerHour int
+	LogLevel     slog.Level
 }
 
 func loadConfig() (config, error) {
 	cfg := config{
-		Addr:     cmp.Or(os.Getenv("ADDR"), portAddr(os.Getenv("PORT")), ":8080"),
-		Endpoint: cmp.Or(os.Getenv("UPSTREAM_URL"), defaultEndpoint),
-		Window:   defaultWindow,
-		LogLevel: slog.LevelInfo,
+		Addr:         cmp.Or(os.Getenv("ADDR"), portAddr(os.Getenv("PORT")), ":8080"),
+		Endpoint:     cmp.Or(os.Getenv("UPSTREAM_URL"), defaultEndpoint),
+		CacheTTL:     defaultTTL,
+		CallsPerHour: defaultCallsPerHour,
+		LogLevel:     slog.LevelInfo,
 	}
 
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
@@ -112,12 +120,20 @@ func loadConfig() (config, error) {
 		}
 	}
 
-	if v := os.Getenv("OUTAGE_WINDOW_DAYS"); v != "" {
-		days, err := strconv.Atoi(v)
-		if err != nil || days < 1 || days > maxWindowDays {
-			return config{}, fmt.Errorf("OUTAGE_WINDOW_DAYS must be an integer in 1..%d, got %q", maxWindowDays, v)
+	if v := os.Getenv("CACHE_TTL"); v != "" {
+		ttl, err := time.ParseDuration(v)
+		if err != nil || ttl < time.Minute || ttl > maxCacheTTL {
+			return config{}, fmt.Errorf("CACHE_TTL must be a duration in 1m..%s, got %q", maxCacheTTL, v)
 		}
-		cfg.Window = time.Duration(days) * 24 * time.Hour
+		cfg.CacheTTL = ttl
+	}
+
+	if v := os.Getenv("UPSTREAM_CALLS_PER_HOUR"); v != "" {
+		calls, err := strconv.Atoi(v)
+		if err != nil || calls < 1 || calls > maxCallsPerHour {
+			return config{}, fmt.Errorf("UPSTREAM_CALLS_PER_HOUR must be an integer in 1..%d, got %q", maxCallsPerHour, v)
+		}
+		cfg.CallsPerHour = calls
 	}
 
 	return cfg, nil

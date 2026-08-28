@@ -9,10 +9,14 @@ import (
 	ptime "github.com/yaa110/go-persian-calendar"
 )
 
-// jalaliDate formats t as a Jalali "yyyy/mm/dd" date as seen from loc.
-func jalaliDate(t time.Time, loc *time.Location) string {
-	p := ptime.New(t.In(loc))
-	return fmt.Sprintf("%04d/%02d/%02d", p.Year(), p.Month(), p.Day())
+// parseJalaliStamp converts a Jalali "yyyy/mm/dd HH:MM" stamp into the
+// equivalent Gregorian instant in loc.
+func parseJalaliStamp(stamp string, loc *time.Location) (time.Time, error) {
+	date, clock, ok := strings.Cut(strings.TrimSpace(stamp), " ")
+	if !ok {
+		return time.Time{}, fmt.Errorf("jalali stamp %q: want %q", stamp, "yyyy/mm/dd HH:MM")
+	}
+	return parseJalaliDateTime(date, clock, loc)
 }
 
 // parseJalaliDateTime converts a Jalali date ("yyyy/mm/dd") plus a clock time

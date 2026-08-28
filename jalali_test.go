@@ -1,8 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 	"time"
+
+	ptime "github.com/yaa110/go-persian-calendar"
 )
 
 // tehran returns the Asia/Tehran location, which the embedded tzdata makes
@@ -17,24 +20,40 @@ func tehran(t *testing.T) *time.Location {
 	return loc
 }
 
-func TestJalaliDate(t *testing.T) {
+func TestParseJalaliStamp(t *testing.T) {
 	loc := tehran(t)
 
 	tests := []struct {
-		name string
-		in   time.Time
-		want string
+		name    string
+		stamp   string
+		want    time.Time
+		wantErr bool
 	}{
-		{"nowruz 1404", time.Date(2025, 3, 21, 12, 0, 0, 0, loc), "1404/01/01"},
-		{"mid year", time.Date(2025, 9, 7, 12, 0, 0, 0, loc), "1404/06/16"},
-		{"converts from utc", time.Date(2025, 9, 7, 8, 30, 0, 0, time.UTC), "1404/06/16"},
-		{"last day before nowruz", time.Date(2025, 3, 20, 12, 0, 0, 0, loc), "1403/12/30"},
+		{"nowruz", "1404/01/01 09:30", time.Date(2025, 3, 21, 9, 30, 0, 0, loc), false},
+		{"mid year", "1404/06/16 09:00", time.Date(2025, 9, 7, 9, 0, 0, 0, loc), false},
+		{"leap day", "1403/12/30 00:00", time.Date(2025, 3, 20, 0, 0, 0, 0, loc), false},
+		{"surrounding whitespace", " 1404/06/16 09:00 ", time.Date(2025, 9, 7, 9, 0, 0, 0, loc), false},
+		{"no time part", "1404/06/16", time.Time{}, true},
+		{"empty", "", time.Time{}, true},
+		{"separated by T", "1404/06/16T09:00", time.Time{}, true},
+		{"garbage", "not a stamp", time.Time{}, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := jalaliDate(tt.in, loc); got != tt.want {
-				t.Errorf("jalaliDate(%s) = %q, want %q", tt.in.Format(time.RFC3339), got, tt.want)
+			got, err := parseJalaliStamp(tt.stamp, loc)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseJalaliStamp(%q) = %s, want error", tt.stamp, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseJalaliStamp(%q) = %v", tt.stamp, err)
+			}
+			if !got.Equal(tt.want) {
+				t.Errorf("parseJalaliStamp(%q) = %s, want %s",
+					tt.stamp, got.Format(time.RFC3339), tt.want.Format(time.RFC3339))
 			}
 		})
 	}
@@ -122,14 +141,15 @@ func TestJalaliRoundTrip(t *testing.T) {
 	// directions unchanged.
 	day := time.Date(2025, 3, 21, 12, 0, 0, 0, loc)
 	for range 365 {
-		date := jalaliDate(day, loc)
+		p := ptime.New(day)
+		stamp := fmt.Sprintf("%04d/%02d/%02d 12:00", p.Year(), p.Month(), p.Day())
 
-		got, err := parseJalaliDateTime(date, "12:00", loc)
+		got, err := parseJalaliStamp(stamp, loc)
 		if err != nil {
-			t.Fatalf("parseJalaliDateTime(%q) = %v", date, err)
+			t.Fatalf("parseJalaliStamp(%q) = %v", stamp, err)
 		}
 		if !got.Equal(day) {
-			t.Fatalf("round trip of %s via %q = %s", day.Format(time.RFC3339), date, got.Format(time.RFC3339))
+			t.Fatalf("round trip of %s via %q = %s", day.Format(time.RFC3339), stamp, got.Format(time.RFC3339))
 		}
 
 		day = day.AddDate(0, 0, 1)

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"time"
 
 	ics "github.com/arran4/golang-ical"
@@ -19,10 +20,10 @@ const (
 	refreshInterval = "PT1H"
 )
 
-// buildICS renders outages as an iCalendar feed. Its output depends only on
+// buildICS renders a report as an iCalendar feed. Its output depends only on
 // its inputs, so a feed refetched with unchanged data is byte-identical.
-func buildICS(bill string, outages []Outage, loc *time.Location) ([]byte, error) {
-	name := "Power Outages – " + bill
+func buildICS(rep Report, loc *time.Location) ([]byte, error) {
+	name := "Power Outages – " + rep.Bill
 
 	cal := ics.NewCalendar()
 	cal.SetMethod(ics.MethodPublish)
@@ -35,11 +36,15 @@ func buildICS(bill string, outages []Outage, loc *time.Location) ([]byte, error)
 	cal.SetXWRTimezone(loc.String())
 	cal.SetRefreshInterval(refreshInterval)
 	cal.SetXPublishedTTL(refreshInterval)
+	if rep.Address != "" {
+		cal.SetDescription(rep.Address)
+		cal.SetXWRCalDesc(rep.Address)
+	}
 
-	for _, o := range outages {
+	for _, o := range rep.Outages {
 		// DTSTART/DTEND are emitted as UTC timestamps; X-WR-TIMEZONE above
 		// tells clients which zone to render them in.
-		ev := cal.AddEvent(eventUID(bill, o.Start, o.End))
+		ev := cal.AddEvent(eventUID(rep.Bill, o.Start, o.End))
 		// DTSTAMP is required by RFC 5545. Deriving it from the event rather
 		// than from time.Now keeps repeated renders identical.
 		ev.SetDtStampTime(o.Start.UTC())
@@ -53,6 +58,17 @@ func buildICS(bill string, outages []Outage, loc *time.Location) ([]byte, error)
 		ev.SetTimeTransparency(ics.TransparencyTransparent)
 		ev.SetStartAt(o.Start)
 		ev.SetEndAt(o.End)
+		if o.Reason != "" {
+			ev.SetDescription(o.Reason)
+		}
+		if rep.Address != "" {
+			ev.SetLocation(rep.Address)
+		}
+		if rep.HasCoords {
+			// GEO takes decimal degrees. Format them explicitly rather than
+			// let the library choose, so the rendering stays fixed.
+			ev.SetGeo(coord(rep.Latitude), coord(rep.Longitude))
+		}
 	}
 
 	// RFC 5545 §3.1 requires CRLF between content lines, but golang-ical
@@ -64,6 +80,13 @@ func buildICS(bill string, outages []Outage, loc *time.Location) ([]byte, error)
 		return nil, fmt.Errorf("serializing calendar: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+// coord renders a coordinate at fixed precision. Six decimals is about a
+// tenth of a metre, far past what a distribution transformer's location is
+// known to.
+func coord(v float64) string {
+	return strconv.FormatFloat(v, 'f', 6, 64)
 }
 
 // eventUID derives a stable per-event identifier so refetching the feed

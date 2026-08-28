@@ -7,19 +7,24 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
 
+// testBill is a syntactically valid but fictitious bill number.
+const testBill = "1234567890123"
+
 // discardLogger keeps skipped-row warnings out of the test output.
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// upstream starts a fake برق من API that serves handler, and returns a Client
+// upstream starts a fake outage API that serves handler, and returns a Client
 // pointed at it.
 func upstream(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
@@ -27,132 +32,295 @@ func upstream(t *testing.T, handler http.HandlerFunc) *Client {
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	return NewClient(tehran(t), WithEndpoint(srv.URL), WithLogger(discardLogger()), WithHTTPClient(srv.Client()))
+	client := srv.Client()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New() = %v", err)
+	}
+	client.Jar = jar
+
+	return NewClient(tehran(t), WithEndpoint(srv.URL), WithLogger(discardLogger()), WithHTTPClient(client))
 }
 
-// respondWith serves a canned report body with an HTTP 200.
-func respondWith(t *testing.T, body reportResponse) http.HandlerFunc {
+// respondWith serves a canned bill lookup with an HTTP 200.
+func respondWith(t *testing.T, bills ...billResponse) http.HandlerFunc {
 	t.Helper()
 
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(body); err != nil {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if err := json.NewEncoder(w).Encode(bills); err != nil {
 			t.Errorf("encoding fake response: %v", err)
 		}
 	}
 }
 
-func TestFetchRequestShape(t *testing.T) {
-	loc := tehran(t)
+// oneOutage is a well-formed bill lookup with a single two-hour outage.
+func oneOutage() billResponse {
+	bill := testBill
+	address := "خیابان نمونه، پلاک ۱"
+	lat, lng := 35.700000, 51.400000
 
+	return billResponse{
+		BillID:    &bill,
+		Latitude:  &lat,
+		Longitude: &lng,
+		Address:   &address,
+		Outages: []outageItem{{
+			Number:    251035,
+			Reason:    "مدیریت انرژی",
+			Start:     "1404/06/16 09:00",
+			Reconnect: "1404/06/16 11:00",
+		}},
+	}
+}
+
+// challengePage is the real interstitial the bot check serves, captured from
+// production. Keeping the genuine article as a fixture means a change to the
+// generator shows up here rather than in a subscriber's empty calendar.
+func challengePage(t *testing.T) []byte {
+	t.Helper()
+
+	page, err := os.ReadFile("testdata/challenge.html")
+	if err != nil {
+		t.Fatalf("reading challenge fixture: %v", err)
+	}
+	return page
+}
+
+func TestFetchRequestShape(t *testing.T) {
 	var (
-		gotAuth   string
 		gotMethod string
-		gotBody   reportRequest
+		gotType   string
+		gotBill   string
 	)
 
 	client := upstream(t, func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
 		gotMethod = r.Method
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-			t.Errorf("decoding request body: %v", err)
+		gotType = r.Header.Get("Content-Type")
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("parsing request form: %v", err)
 		}
-		json.NewEncoder(w).Encode(reportResponse{Status: 200})
+		gotBill = r.PostForm.Get("BillId")
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[]`))
 	})
 
-	from := time.Date(2025, 9, 7, 12, 0, 0, 0, loc)
-	if _, err := client.Fetch(t.Context(), "tok", "1234567890", from, from.Add(7*24*time.Hour)); err != nil {
+	if _, err := client.Fetch(t.Context(), testBill); err != nil {
 		t.Fatalf("Fetch() = %v", err)
 	}
 
 	if gotMethod != http.MethodPost {
 		t.Errorf("method = %q, want POST", gotMethod)
 	}
-	if want := "Bearer tok"; gotAuth != want {
-		t.Errorf("Authorization = %q, want %q", gotAuth, want)
+	if want := "application/x-www-form-urlencoded"; gotType != want {
+		t.Errorf("Content-Type = %q, want %q", gotType, want)
 	}
-
-	// The window has to reach the API as Jalali dates.
-	want := reportRequest{BillID: "1234567890", From: "1404/06/16", To: "1404/06/23"}
-	if diff := cmp.Diff(want, gotBody); diff != "" {
-		t.Errorf("request body mismatch (-want +got):\n%s", diff)
+	if gotBill != testBill {
+		t.Errorf("BillId = %q, want %q", gotBill, testBill)
 	}
 }
 
-func TestFetchParsesOutages(t *testing.T) {
+func TestFetchParsesReport(t *testing.T) {
 	loc := tehran(t)
 
-	client := upstream(t, respondWith(t, reportResponse{
-		Status: 200,
-		Data: []reportItem{
-			// Deliberately out of order: the feed must come back sorted.
-			{Date: "1404/06/17", Start: "14:00", Stop: "16:00"},
-			{Date: "1404/06/16", Start: "09:00", Stop: "11:00"},
-		},
-	}))
+	bill := oneOutage()
+	// Deliberately out of order: the feed must come back sorted.
+	bill.Outages = append([]outageItem{{
+		Number:    251036,
+		Reason:    "تعمیرات",
+		Start:     "1404/06/17 14:00",
+		Reconnect: "1404/06/17 16:00",
+	}}, bill.Outages...)
 
-	got, err := client.Fetch(t.Context(), "tok", "1234567890", time.Now(), time.Now())
+	client := upstream(t, respondWith(t, bill))
+
+	got, err := client.Fetch(t.Context(), testBill)
 	if err != nil {
 		t.Fatalf("Fetch() = %v", err)
 	}
 
-	want := []Outage{
-		{
-			Start: time.Date(2025, 9, 7, 9, 0, 0, 0, loc),
-			End:   time.Date(2025, 9, 7, 11, 0, 0, 0, loc),
-		},
-		{
-			Start: time.Date(2025, 9, 8, 14, 0, 0, 0, loc),
-			End:   time.Date(2025, 9, 8, 16, 0, 0, 0, loc),
+	want := Report{
+		Bill:      testBill,
+		Address:   "خیابان نمونه، پلاک ۱",
+		Latitude:  35.700000,
+		Longitude: 51.400000,
+		HasCoords: true,
+		Outages: []Outage{
+			{
+				Start:  time.Date(2025, 9, 7, 9, 0, 0, 0, loc),
+				End:    time.Date(2025, 9, 7, 11, 0, 0, 0, loc),
+				Reason: "مدیریت انرژی",
+			},
+			{
+				Start:  time.Date(2025, 9, 8, 14, 0, 0, 0, loc),
+				End:    time.Date(2025, 9, 8, 16, 0, 0, 0, loc),
+				Reason: "تعمیرات",
+			},
 		},
 	}
 	if diff := cmp.Diff(want, got, cmp.Comparer(func(a, b time.Time) bool { return a.Equal(b) })); diff != "" {
-		t.Errorf("outage mismatch (-want +got):\n%s", diff)
+		t.Errorf("report mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func TestFetchOvernightOutage(t *testing.T) {
 	loc := tehran(t)
 
-	// A row carries one date and two clock times, so an outage crossing
-	// midnight has to be rolled onto the following day.
-	client := upstream(t, respondWith(t, reportResponse{
-		Status: 200,
-		Data:   []reportItem{{Date: "1404/06/16", Start: "22:00", Stop: "02:00"}},
-	}))
+	// Both stamps carry their own date, so an outage crossing midnight needs
+	// no repair — unlike the old report format, which dated only the start.
+	bill := oneOutage()
+	bill.Outages = []outageItem{{
+		Start:     "1404/06/16 22:00",
+		Reconnect: "1404/06/17 02:00",
+	}}
 
-	got, err := client.Fetch(t.Context(), "tok", "1234567890", time.Now(), time.Now())
+	client := upstream(t, respondWith(t, bill))
+
+	got, err := client.Fetch(t.Context(), testBill)
 	if err != nil {
 		t.Fatalf("Fetch() = %v", err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("got %d outages, want 1", len(got))
+	if len(got.Outages) != 1 {
+		t.Fatalf("got %d outages, want 1", len(got.Outages))
 	}
 
 	wantEnd := time.Date(2025, 9, 8, 2, 0, 0, 0, loc)
-	if !got[0].End.Equal(wantEnd) {
-		t.Errorf("end = %s, want %s", got[0].End.Format(time.RFC3339), wantEnd.Format(time.RFC3339))
+	if !got.Outages[0].End.Equal(wantEnd) {
+		t.Errorf("end = %s, want %s", got.Outages[0].End.Format(time.RFC3339), wantEnd.Format(time.RFC3339))
 	}
 }
 
 func TestFetchSkipsUnusableRows(t *testing.T) {
-	client := upstream(t, respondWith(t, reportResponse{
-		Status: 200,
-		Data: []reportItem{
-			{Date: "not-a-date", Start: "09:00", Stop: "11:00"},
-			{Date: "1404/06/16", Start: "09:00", Stop: "bad"},
-			{Date: "1404/06/16", Start: "09:00", Stop: "09:00"}, // zero length
-			{Date: "1404/06/16", Start: "09:00", Stop: "11:00"}, // the only good row
-		},
-	}))
+	bill := oneOutage()
+	bill.Outages = []outageItem{
+		{Start: "not-a-stamp", Reconnect: "1404/06/16 11:00"},
+		{Start: "1404/06/16 09:00", Reconnect: "bad"},
+		{Start: "1404/06/16 09:00", Reconnect: "1404/06/16 09:00"}, // zero length
+		{Start: "1404/06/16 11:00", Reconnect: "1404/06/16 09:00"}, // ends before it starts
+		{Start: "1404/06/16 09:00", Reconnect: "1404/06/16 11:00"}, // the only good row
+	}
+
+	client := upstream(t, respondWith(t, bill))
 
 	// One bad row must not cost the subscriber their whole calendar.
-	got, err := client.Fetch(t.Context(), "tok", "1234567890", time.Now(), time.Now())
+	got, err := client.Fetch(t.Context(), testBill)
 	if err != nil {
 		t.Fatalf("Fetch() = %v", err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("got %d outages, want 1: %+v", len(got), got)
+	if len(got.Outages) != 1 {
+		t.Fatalf("got %d outages, want 1: %+v", len(got.Outages), got.Outages)
+	}
+}
+
+func TestFetchUnknownBill(t *testing.T) {
+	// An unknown bill number is not an error upstream: it answers 200 with a
+	// fully null entry and no outages.
+	client := upstream(t, respondWith(t, billResponse{Outages: []outageItem{}}))
+
+	got, err := client.Fetch(t.Context(), testBill)
+	if err != nil {
+		t.Fatalf("Fetch() = %v", err)
+	}
+	if len(got.Outages) != 0 || got.HasCoords || got.Address != "" {
+		t.Errorf("Fetch() = %+v, want an empty report", got)
+	}
+}
+
+func TestFetchEmptyArray(t *testing.T) {
+	client := upstream(t, respondWith(t))
+
+	got, err := client.Fetch(t.Context(), testBill)
+	if err != nil {
+		t.Fatalf("Fetch() = %v", err)
+	}
+	if got.Bill != testBill || len(got.Outages) != 0 {
+		t.Errorf("Fetch() = %+v, want an empty report for %s", got, testBill)
+	}
+}
+
+func TestFetchSolvesChallenge(t *testing.T) {
+	page := challengePage(t)
+
+	var (
+		calls      int
+		sentSecond []*http.Cookie
+	)
+
+	client := upstream(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == 1 {
+			// The bot check answers 200 with HTML, not an error status.
+			w.Header().Set("Content-Type", "text/html")
+			w.Write(page)
+			return
+		}
+		sentSecond = r.Cookies()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]billResponse{oneOutage()})
+	})
+
+	got, err := client.Fetch(t.Context(), testBill)
+	if err != nil {
+		t.Fatalf("Fetch() = %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("upstream calls = %d, want 2", calls)
+	}
+	if len(got.Outages) != 1 {
+		t.Errorf("got %d outages, want 1", len(got.Outages))
+	}
+
+	names := make(map[string]string, len(sentSecond))
+	for _, c := range sentSecond {
+		names[c.Name] = c.Value
+	}
+	for _, want := range []string{"__arcsjs", "__arcsjsc"} {
+		if names[want] == "" {
+			t.Errorf("retry did not carry the %s cookie, sent %v", want, names)
+		}
+	}
+}
+
+func TestFetchReusesChallengeCookies(t *testing.T) {
+	page := challengePage(t)
+
+	var calls int
+	client := upstream(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if len(r.Cookies()) == 0 {
+			w.Header().Set("Content-Type", "text/html")
+			w.Write(page)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]billResponse{oneOutage()})
+	})
+
+	for range 3 {
+		if _, err := client.Fetch(t.Context(), testBill); err != nil {
+			t.Fatalf("Fetch() = %v", err)
+		}
+	}
+
+	// One challenge round plus three lookups. Solving it again per fetch
+	// would double the cost against a 20-call hourly allowance.
+	if want := 4; calls != want {
+		t.Errorf("upstream calls = %d, want %d", calls, want)
+	}
+}
+
+func TestFetchChallengeNeverClears(t *testing.T) {
+	page := challengePage(t)
+
+	client := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write(page)
+	})
+
+	_, err := client.Fetch(t.Context(), testBill)
+	if !errors.Is(err, ErrUpstream) {
+		t.Errorf("Fetch() = %v, want %v", err, ErrUpstream)
 	}
 }
 
@@ -163,38 +331,38 @@ func TestFetchErrors(t *testing.T) {
 		want    error
 	}{
 		{
-			name:    "http unauthorized",
-			handler: func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) },
-			want:    ErrUnauthorized,
+			name: "quota exceeded",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusTooManyRequests)
+				w.Write([]byte("API calls quota exceeded! maximum admitted 20 per 1h."))
+			},
+			want: ErrThrottled,
 		},
 		{
-			name:    "http forbidden",
-			handler: func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusForbidden) },
-			want:    ErrUnauthorized,
+			name:    "malformed bill",
+			handler: func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadRequest) },
+			want:    ErrBadBill,
 		},
 		{
-			name:    "http server error",
+			name:    "server error",
 			handler: func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) },
 			want:    ErrUpstream,
 		},
 		{
-			name: "unauthorized in the body",
+			name: "malformed json",
 			handler: func(w http.ResponseWriter, _ *http.Request) {
-				json.NewEncoder(w).Encode(reportResponse{Status: 401, Message: "token expired"})
-			},
-			want: ErrUnauthorized,
-		},
-		{
-			name: "application error in the body",
-			handler: func(w http.ResponseWriter, _ *http.Request) {
-				json.NewEncoder(w).Encode(reportResponse{Status: 500, Message: "boom"})
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte("{{{"))
 			},
 			want: ErrUpstream,
 		},
 		{
-			name:    "malformed json",
-			handler: func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("{{{")) },
-			want:    ErrUpstream,
+			name: "html that is not a challenge",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/html")
+				w.Write([]byte("<html><body>maintenance</body></html>"))
+			},
+			want: ErrUpstream,
 		},
 	}
 
@@ -202,11 +370,30 @@ func TestFetchErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			client := upstream(t, tt.handler)
 
-			_, err := client.Fetch(t.Context(), "tok", "1234567890", time.Now(), time.Now())
-			if !errors.Is(err, tt.want) {
+			if _, err := client.Fetch(t.Context(), testBill); !errors.Is(err, tt.want) {
 				t.Errorf("Fetch() = %v, want %v", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestFetchRespectsBudget(t *testing.T) {
+	var calls int
+	client := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]billResponse{oneOutage()})
+	})
+	WithBudget(newBudget(1, time.Hour))(client)
+
+	if _, err := client.Fetch(t.Context(), testBill); err != nil {
+		t.Fatalf("first Fetch() = %v", err)
+	}
+	if _, err := client.Fetch(t.Context(), testBill); !errors.Is(err, ErrThrottled) {
+		t.Errorf("second Fetch() = %v, want %v", err, ErrThrottled)
+	}
+	if calls != 1 {
+		t.Errorf("upstream calls = %d, want 1", calls)
 	}
 }
 
@@ -217,21 +404,43 @@ func TestFetchUnreachableUpstream(t *testing.T) {
 		WithHTTPClient(&http.Client{Timeout: time.Second}),
 	)
 
-	_, err := client.Fetch(t.Context(), "tok", "1234567890", time.Now(), time.Now())
-	if !errors.Is(err, ErrUpstream) {
+	if _, err := client.Fetch(t.Context(), testBill); !errors.Is(err, ErrUpstream) {
 		t.Errorf("Fetch() = %v, want %v", err, ErrUpstream)
 	}
 }
 
 func TestFetchHonorsContextCancellation(t *testing.T) {
-	client := upstream(t, func(w http.ResponseWriter, r *http.Request) {
+	client := upstream(t, func(_ http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 	})
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	if _, err := client.Fetch(ctx, "tok", "1234567890", time.Now(), time.Now()); !errors.Is(err, context.Canceled) {
+	if _, err := client.Fetch(ctx, testBill); !errors.Is(err, context.Canceled) {
 		t.Errorf("Fetch() = %v, want context.Canceled", err)
+	}
+}
+
+// TestFetchStopsCallingAfterUpstream429 pins that one refusal takes the rest of
+// the local allowance with it. Otherwise a cold cache means every request keeps
+// hammering an API that has already said no.
+func TestFetchStopsCallingAfterUpstream429(t *testing.T) {
+	var calls int
+	client := upstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte("API calls quota exceeded! maximum admitted 20 per 1h."))
+	})
+	WithBudget(newBudget(10, time.Hour))(client)
+
+	for range 5 {
+		if _, err := client.Fetch(t.Context(), testBill); !errors.Is(err, ErrThrottled) {
+			t.Fatalf("Fetch() = %v, want %v", err, ErrThrottled)
+		}
+	}
+
+	if calls != 1 {
+		t.Errorf("upstream calls = %d, want 1", calls)
 	}
 }

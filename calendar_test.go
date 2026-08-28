@@ -6,15 +6,27 @@ import (
 	"time"
 )
 
+// sampleReport is one two-hour outage with the address and coordinates the
+// API returns alongside it.
+func sampleReport(loc *time.Location) Report {
+	return Report{
+		Bill:      testBill,
+		Address:   "خیابان نمونه، پلاک ۱",
+		Latitude:  35.700000,
+		Longitude: 51.400000,
+		HasCoords: true,
+		Outages: []Outage{{
+			Start:  time.Date(2025, 9, 7, 9, 0, 0, 0, loc),
+			End:    time.Date(2025, 9, 7, 11, 0, 0, 0, loc),
+			Reason: "مدیریت انرژی",
+		}},
+	}
+}
+
 func TestBuildICS(t *testing.T) {
 	loc := tehran(t)
 
-	outages := []Outage{{
-		Start: time.Date(2025, 9, 7, 9, 0, 0, 0, loc),
-		End:   time.Date(2025, 9, 7, 11, 0, 0, 0, loc),
-	}}
-
-	feed, err := buildICS("1234567890", outages, loc)
+	feed, err := buildICS(sampleReport(loc), loc)
 	if err != nil {
 		t.Fatalf("buildICS() = %v", err)
 	}
@@ -26,13 +38,14 @@ func TestBuildICS(t *testing.T) {
 		"VERSION:2.0",
 		"METHOD:PUBLISH",
 		"PRODID:" + productID,
-		"X-WR-CALNAME:Power Outages – 1234567890",
+		"X-WR-CALNAME:Power Outages – " + testBill,
 		"X-WR-TIMEZONE:Asia/Tehran",
 		"BEGIN:VEVENT",
 		"DTSTART:20250907T053000Z",
 		"DTEND:20250907T073000Z",
 		"DTSTAMP:20250907T053000Z",
 		"TRANSP:TRANSPARENT",
+		"GEO:35.700000;51.400000",
 		"END:VEVENT",
 		"END:VCALENDAR",
 	}
@@ -50,10 +63,7 @@ func TestBuildICS(t *testing.T) {
 func TestBuildICSOmitsClass(t *testing.T) {
 	loc := tehran(t)
 
-	start := time.Date(2025, 9, 7, 9, 0, 0, 0, loc)
-	outages := []Outage{{Start: start, End: start.Add(2 * time.Hour)}}
-
-	feed, err := buildICS("1234567890", outages, loc)
+	feed, err := buildICS(sampleReport(loc), loc)
 	if err != nil {
 		t.Fatalf("buildICS() = %v", err)
 	}
@@ -66,7 +76,7 @@ func TestBuildICSOmitsClass(t *testing.T) {
 func TestBuildICSEmpty(t *testing.T) {
 	loc := tehran(t)
 
-	feed, err := buildICS("1234567890", nil, loc)
+	feed, err := buildICS(Report{Bill: testBill}, loc)
 	if err != nil {
 		t.Fatalf("buildICS() = %v", err)
 	}
@@ -78,19 +88,31 @@ func TestBuildICSEmpty(t *testing.T) {
 	}
 }
 
-func TestBuildICSIsDeterministic(t *testing.T) {
+func TestBuildICSWithoutCoordinates(t *testing.T) {
 	loc := tehran(t)
 
-	outages := []Outage{{
-		Start: time.Date(2025, 9, 7, 9, 0, 0, 0, loc),
-		End:   time.Date(2025, 9, 7, 11, 0, 0, 0, loc),
-	}}
+	// An unknown bill comes back with null coordinates. GEO:0;0 would drop a
+	// pin in the Gulf of Guinea, so the property has to be left out.
+	rep := sampleReport(loc)
+	rep.HasCoords = false
 
-	first, err := buildICS("1234567890", outages, loc)
+	feed, err := buildICS(rep, loc)
 	if err != nil {
 		t.Fatalf("buildICS() = %v", err)
 	}
-	second, err := buildICS("1234567890", outages, loc)
+	if got := string(feed); strings.Contains(got, "GEO:") {
+		t.Errorf("feed sets GEO without coordinates:\n%s", got)
+	}
+}
+
+func TestBuildICSIsDeterministic(t *testing.T) {
+	loc := tehran(t)
+
+	first, err := buildICS(sampleReport(loc), loc)
+	if err != nil {
+		t.Fatalf("buildICS() = %v", err)
+	}
+	second, err := buildICS(sampleReport(loc), loc)
 	if err != nil {
 		t.Fatalf("buildICS() = %v", err)
 	}
@@ -137,12 +159,7 @@ func TestEventUID(t *testing.T) {
 func TestBuildICSUsesCRLF(t *testing.T) {
 	loc := tehran(t)
 
-	outages := []Outage{{
-		Start: time.Date(2025, 9, 7, 9, 0, 0, 0, loc),
-		End:   time.Date(2025, 9, 7, 11, 0, 0, 0, loc),
-	}}
-
-	feed, err := buildICS("1234567890", outages, loc)
+	feed, err := buildICS(sampleReport(loc), loc)
 	if err != nil {
 		t.Fatalf("buildICS() = %v", err)
 	}
