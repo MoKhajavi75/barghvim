@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -95,8 +96,7 @@ func TestSolveChallengeRejects(t *testing.T) {
 func TestSolveChallengeRejectsTooManyCookies(t *testing.T) {
 	var page strings.Builder
 	for i := range maxChallengeCookies + 1 {
-		page.WriteString("document.cookie = 'c" + string(rune('0'+i)) + "=';")
-		page.WriteString(`eval("'v'");`)
+		fmt.Fprintf(&page, `document.cookie = 'c%d=';eval("'v'");`, i)
 	}
 
 	if got, err := solveChallenge([]byte(page.String())); err == nil {
