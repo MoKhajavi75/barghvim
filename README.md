@@ -111,6 +111,23 @@ webcal://barghvim.ir/1234567890123.ics
 
 `GET /healthz` returns `ok` for liveness checks.
 
+### Finding your bill number
+
+Your bill number is the 13-digit **شناسه قبض**. It is printed on your electricity
+bill, but you do not need the bill — you can read it off the map by finding your
+home:
+
+1. Open the [Tehran outage map](https://shahab.tbtb.ir/public/map/index) (اطلاع رسانی خاموشی تهران بزرگ)
+2. Pick your district from **انتخاب منطقه** at the top, then pan and zoom to your building
+3. Click the pin on it
+4. The popup lists **شناسه قبض** along with the next outage window and its reason
+
+That number is what Barghvim needs. The search box at the top also accepts a
+شناسه قبض or an آدرس if you would rather look it up directly.
+
+Barghvim reads the same public API this map does, so if the map knows your
+address, the feed will work for it.
+
 ---
 
 ## 🔒 Privacy
