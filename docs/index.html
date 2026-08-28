@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>برق‌ویم — خاموشی‌های برق تهران در تقویم شما</title>
+<meta name="description" content="خاموشی‌های برنامه‌ریزی‌شدهٔ برق تهران را مستقیم روی تقویم گوشی و کامپیوترتان ببینید. فقط با شناسهٔ قبض، بدون ثبت‌نام.">
+<meta name="theme-color" content="#0b1020">
+<meta property="og:title" content="برق‌ویم — خاموشی‌های برق تهران در تقویم شما">
+<meta property="og:description" content="خاموشی‌های برنامه‌ریزی‌شدهٔ برق تهران، مستقیم روی تقویم شما. بدون ثبت‌نام، بدون توکن.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://barghvim.ir/">
+<meta property="og:locale" content="fa_IR">
+<!-- Inline SVG favicon: any external file request would hit the app's /{bill} route. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E">
+
+<style>
+  /* Everything is inline on purpose. This page is served through nginx at the
+     apex, where any subresource path would fall through to the calendar app. */
+  :root {
+    --bg: #f6f7fb;
+    --bg-2: #ffffff;
+    --ink: #131829;
+    --muted: #5b6478;
+    --line: #e3e7f0;
+    --accent: #f5a524;
+    --accent-2: #ffd76e;
+    --accent-ink: #6b3f00;
+    --ok: #149a6a;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 12px 32px -12px rgba(16, 24, 40, .18);
+    --radius: 18px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #080b16;
+      --bg-2: #111728;
+      --ink: #eef1f7;
+      --muted: #9aa5bd;
+      --line: #222b42;
+      --accent: #ffc247;
+      --accent-2: #ffdf95;
+      --accent-ink: #2a1a00;
+      --ok: #34d399;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 18px 44px -18px rgba(0, 0, 0, .75);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--ink);
+    /* System stack only. A webfont would be a second request, and Google Fonts
+       is unreliable from inside Iran. */
+    font-family: Vazirmatn, "Vazir", "IRANSans", "Segoe UI", Tahoma, "Geeza Pro", system-ui, sans-serif;
+    line-height: 1.85;
+    font-size: 17px;
+    overflow-x: hidden;
+  }
+
+  /* Soft moving aurora behind the hero. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: -30vh -10vw auto;
+    height: 70vh;
+    z-index: -1;
+    background:
+      radial-gradient(38vw 38vh at 22% 30%, rgba(245, 165, 36, .22), transparent 65%),
+      radial-gradient(34vw 34vh at 78% 18%, rgba(94, 129, 255, .20), transparent 62%);
+    filter: blur(14px);
+    animation: drift 22s ease-in-out infinite alternate;
+  }
+  @keyframes drift {
+    from { transform: translate3d(-3%, -2%, 0) scale(1); }
+    to   { transform: translate3d(4%, 3%, 0) scale(1.12); }
+  }
+
+  .wrap {
+    width: min(100% - 2.4rem, 62rem);
+    margin-inline: auto;
+  }
+
+  /* ---------- hero ---------- */
+  header {
+    padding: clamp(3rem, 9vw, 6rem) 0 clamp(2rem, 5vw, 3rem);
+    text-align: center;
+  }
+
+  .bolt {
+    width: clamp(64px, 14vw, 92px);
+    height: clamp(64px, 14vw, 92px);
+    margin-inline: auto;
+    display: grid;
+    place-items: center;
+    border-radius: 26px;
+    background: linear-gradient(150deg, var(--accent-2), var(--accent));
+    box-shadow: 0 12px 30px -10px rgba(245, 165, 36, .75);
+    animation: bob 4.5s ease-in-out infinite;
+  }
+  .bolt svg { width: 52%; height: 52%; display: block; }
+  @keyframes bob {
+    0%, 100% { transform: translateY(0) rotate(-2deg); }
+    50%      { transform: translateY(-9px) rotate(2deg); }
+  }
+
+  h1 {
+    font-size: clamp(2.1rem, 7vw, 3.4rem);
+    line-height: 1.25;
+    margin: 1.1rem 0 .4rem;
+    letter-spacing: -.5px;
+  }
+
+  .lede {
+    font-size: clamp(1.02rem, 2.7vw, 1.24rem);
+    color: var(--muted);
+    margin: 0 auto;
+    max-width: 34rem;
+  }
+
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    justify-content: center;
+    margin: 1.6rem 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .badges li {
+    font-size: .86rem;
+    color: var(--muted);
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: .3rem .9rem;
+  }
+
+  /* A quiet wish, not a feature. Kept smaller and dimmer than the badges so it
+     reads as an aside rather than a claim. */
+  .wish {
+    margin: 1.5rem auto 0;
+    max-width: 28rem;
+    font-size: .95rem;
+    color: var(--muted);
+    opacity: .85;
+  }
+
+  /* ---------- steps ---------- */
+  .steps {
+    display: grid;
+    gap: 1.1rem;
+    padding: 0;
+    margin: clamp(2rem, 6vw, 3.4rem) 0 0;
+    list-style: none;
+  }
+
+  .card {
+    position: relative;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: clamp(1.2rem, 4vw, 1.9rem);
+    box-shadow: var(--shadow);
+    transition: transform .35s cubic-bezier(.2, .8, .2, 1), border-color .35s;
+  }
+  .card:hover { transform: translateY(-4px); border-color: var(--accent); }
+
+  .card h2 {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    font-size: clamp(1.08rem, 3.4vw, 1.3rem);
+    margin: 0 0 .5rem;
+  }
+
+  .num {
+    flex: none;
+    width: 2.1rem;
+    height: 2.1rem;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: linear-gradient(150deg, var(--accent-2), var(--accent));
+    color: var(--accent-ink);
+    font-size: 1rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .card p { margin: 0; color: var(--muted); }
+  .card p + p { margin-top: .7rem; }
+
+  /* Reveal on scroll, staggered. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(22px);
+    animation: rise .7s cubic-bezier(.2, .8, .2, 1) forwards;
+    animation-timeline: view();
+    animation-range: entry 0% cover 26%;
+  }
+  @keyframes rise {
+    to { opacity: 1; transform: none; }
+  }
+  /* Browsers without scroll-driven animations still get the staggered entrance. */
+  @supports not (animation-timeline: view()) {
+    .reveal { animation: rise .7s cubic-bezier(.2, .8, .2, 1) both; }
+    .steps li:nth-child(1) .reveal, .steps li:nth-child(1) { animation-delay: .05s; }
+    .steps li:nth-child(2) { animation-delay: .18s; }
+    .steps li:nth-child(3) { animation-delay: .31s; }
+  }
+
+  /* ---------- link builder ---------- */
+  .field {
+    display: flex;
+    gap: .6rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+  }
+
+  input[type="text"] {
+    flex: 1 1 14rem;
+    min-width: 0;
+    font: inherit;
+    font-size: 1.05rem;
+    letter-spacing: 2px;
+    direction: ltr;
+    text-align: center;
+    padding: .75rem 1rem;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  input[type="text"]:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(245, 165, 36, .18);
+  }
+
+  .btn {
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--bg-2);
+    color: var(--ink);
+    border-radius: 12px;
+    padding: .72rem 1.15rem;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    transition: transform .15s, border-color .2s, background .2s;
+  }
+  .btn:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .btn:active { transform: none; }
+  .btn-primary {
+    background: linear-gradient(150deg, var(--accent-2), var(--accent));
+    border-color: transparent;
+    color: var(--accent-ink);
+  }
+
+  .result {
+    margin-top: 1rem;
+    border: 1px dashed var(--line);
+    border-radius: 14px;
+    padding: .9rem 1rem;
+    background: var(--bg);
+    display: none;
+  }
+  .result.on {
+    display: block;
+    animation: pop .45s cubic-bezier(.2, .8, .2, 1) both;
+  }
+  @keyframes pop {
+    from { opacity: 0; transform: scale(.97) translateY(8px); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  .url {
+    direction: ltr;
+    text-align: left;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .95rem;
+    word-break: break-all;
+    color: var(--ink);
+    margin: 0 0 .8rem;
+  }
+
+  .actions { display: flex; gap: .55rem; flex-wrap: wrap; }
+
+  .hint { font-size: .9rem; color: var(--muted); margin: .7rem 0 0; }
+  .hint.bad { color: #e5484d; }
+
+  kbd {
+    font-family: inherit;
+    font-size: .88em;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    padding: .05em .45em;
+    white-space: nowrap;
+  }
+
+  /* ---------- footer ---------- */
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: .92rem;
+    padding: clamp(2.5rem, 7vw, 4rem) 0 3rem;
+  }
+  footer a { color: inherit; }
+  a { color: var(--ink); text-decoration-color: var(--accent); text-underline-offset: 3px; }
+
+  .toast {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 1.4rem;
+    margin-inline: auto;
+    width: max-content;
+    max-width: calc(100% - 2rem);
+    background: var(--ok);
+    color: #fff;
+    padding: .6rem 1.2rem;
+    border-radius: 999px;
+    font-size: .95rem;
+    opacity: 0;
+    transform: translateY(14px);
+    pointer-events: none;
+    transition: opacity .3s, transform .3s;
+  }
+  .toast.on { opacity: 1; transform: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+    }
+    .reveal { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <div class="bolt" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#3d2400" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12z"/>
+    </svg>
+  </div>
+
+  <h1>خاموشی‌های برق<br>مستقیم روی تقویم شما</h1>
+
+  <p class="lede">
+    برنامهٔ خاموشی‌های از پیش اعلام‌شدهٔ برق تهران را به تقویم گوشی و کامپیوترتان
+    اضافه کنید. یک‌بار مشترک شوید، بعد از آن خودکار به‌روز می‌شود.
+  </p>
+
+  <ul class="badges">
+    <li>بدون ثبت‌نام</li>
+    <li>بدون توکن</li>
+    <li>رایگان و متن‌باز</li>
+  </ul>
+
+  <p class="wish">به امید روزی که این تقویم همیشه خالی بماند.</p>
+</header>
+
+<main class="wrap">
+  <ol class="steps">
+
+    <li class="card reveal">
+      <h2><span class="num">۱</span> شناسهٔ قبض را پیدا کنید</h2>
+      <p>
+        شناسهٔ قبض یک عدد ۱۳ رقمی است. روی قبض برق نوشته شده، ولی لازم نیست دنبال
+        قبض بگردید: کافی است خانه‌تان را روی نقشهٔ خاموشی پیدا کنید.
+      </p>
+      <p>
+        منطقه‌تان را از <strong>انتخاب منطقه</strong> برگزینید، روی ساختمان خود
+        کلیک کنید و <strong>شناسهٔ قبض</strong> را از پنجرهٔ باز شده بردارید.
+      </p>
+      <div class="actions" style="margin-top:1rem">
+        <a class="btn" href="https://shahab.tbtb.ir/public/map/index" target="_blank" rel="noopener noreferrer">
+          باز کردن نقشهٔ خاموشی ↗
+        </a>
+      </div>
+    </li>
+
+    <li class="card reveal">
+      <h2><span class="num">۲</span> لینک تقویم خود را بسازید</h2>
+      <p>شناسهٔ قبض ۱۳ رقمی را این‌جا بنویسید تا لینک اختصاصی شما ساخته شود.</p>
+
+      <div class="field">
+        <input id="bill" type="text" inputmode="numeric" autocomplete="off"
+               spellcheck="false" maxlength="24" placeholder="۱۳ رقم شناسهٔ قبض"
+               aria-label="شناسهٔ قبض ۱۳ رقمی">
+      </div>
+
+      <p class="hint" id="hint">ارقام فارسی هم قبول است.</p>
+
+      <div class="result" id="result">
+        <p class="url" id="url"></p>
+        <div class="actions">
+          <button class="btn btn-primary" id="copy" type="button">کپی لینک</button>
+          <a class="btn" id="sub" href="#">افزودن به تقویم</a>
+        </div>
+      </div>
+    </li>
+
+    <li class="card reveal">
+      <h2><span class="num">۳</span> در تقویم مشترک شوید</h2>
+      <p>
+        <strong>آیفون و مک:</strong> روی دکمهٔ «افزودن به تقویم» بزنید؛ تقویم
+        خودش پیشنهاد اشتراک می‌دهد.
+      </p>
+      <p>
+        <strong>گوگل کلندر:</strong> کنار <kbd>Other calendars</kbd> روی + بزنید،
+        گزینهٔ <kbd>From URL</kbd> را انتخاب کنید و لینک کپی‌شده را بچسبانید.
+      </p>
+      <p>
+        <strong>اوت‌لوک:</strong> از <kbd>Add calendar</kbd> گزینهٔ
+        <kbd>Subscribe from web</kbd> را انتخاب کنید.
+      </p>
+      <p class="hint">
+        تقویم هر چند ساعت یک‌بار خودش تازه می‌شود. خاموشی‌هایی که تمام شده‌اند
+        حذف می‌شوند و خاموشی در جریان، با زمان تخمینی وصل برق نمایش داده می‌شود.
+      </p>
+    </li>
+
+  </ol>
+</main>
+
+<footer class="wrap">
+  <p>
+    ساخته‌شده برای روزهای بی‌برق ⚡️ —
+    <a href="https://github.com/mokhajavi75/barghvim" target="_blank" rel="noopener noreferrer">سورس روی گیت‌هاب</a>
+  </p>
+  <p style="font-size:.86rem">
+    داده‌ها از سامانهٔ اطلاع‌رسانی خاموشی تهران بزرگ خوانده می‌شود. برق‌ویم چیزی
+    را ذخیره نمی‌کند.
+  </p>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite">لینک کپی شد</div>
+
+<script>
+(function () {
+  var bill = document.getElementById('bill');
+  var result = document.getElementById('result');
+  var urlEl = document.getElementById('url');
+  var sub = document.getElementById('sub');
+  var copy = document.getElementById('copy');
+  var hint = document.getElementById('hint');
+  var toast = document.getElementById('toast');
+
+  // Persian and Arabic-Indic digits map onto ASCII so a pasted number works.
+  function ascii(s) {
+    return s
+      .replace(/[۰-۹]/g, function (d) { return d.charCodeAt(0) - 1776; })
+      .replace(/[٠-٩]/g, function (d) { return d.charCodeAt(0) - 1632; })
+      .replace(/\D/g, '');
+  }
+
+  function render() {
+    var digits = ascii(bill.value);
+
+    if (digits !== bill.value) bill.value = digits;
+
+    if (digits.length !== 13) {
+      result.classList.remove('on');
+      hint.classList.toggle('bad', digits.length > 13);
+      hint.textContent = digits.length === 0
+        ? 'ارقام فارسی هم قبول است.'
+        : digits.length + ' رقم از ۱۳ رقم';
+      return;
+    }
+
+    hint.classList.remove('bad');
+    hint.textContent = 'آماده است ✓';
+
+    var link = 'https://barghvim.ir/' + digits + '.ics';
+    urlEl.textContent = link;
+    sub.href = 'webcal://barghvim.ir/' + digits + '.ics';
+    result.classList.add('on');
+  }
+
+  function flash(msg) {
+    toast.textContent = msg;
+    toast.classList.add('on');
+    setTimeout(function () { toast.classList.remove('on'); }, 1900);
+  }
+
+  bill.addEventListener('input', render);
+
+  copy.addEventListener('click', function () {
+    var text = urlEl.textContent;
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(
+        function () { flash('لینک کپی شد'); },
+        function () { flash('کپی نشد — دستی انتخاب کنید'); }
+      );
+      return;
+    }
+    // Fallback for older mobile browsers.
+    var t = document.createElement('textarea');
+    t.value = text;
+    t.setAttribute('readonly', '');
+    t.style.position = 'fixed';
+    t.style.opacity = '0';
+    document.body.appendChild(t);
+    t.select();
+    try { document.execCommand('copy'); flash('لینک کپی شد'); }
+    catch (e) { flash('کپی نشد — دستی انتخاب کنید'); }
+    document.body.removeChild(t);
+  });
+
+  render();
+})();
+</script>
+
+</body>
+</html>

@@ -5,9 +5,23 @@ server {
   return 301 https://barghvim.ir$request_uri;
 }
 
+# www exists only to send people to the apex. The landing page and the feed both
+# live on barghvim.ir, so there is nothing to serve here.
 server {
   listen 443 ssl;
-  server_name barghvim.ir www.barghvim.ir;
+  server_name www.barghvim.ir;
+
+  ssl_certificate         /etc/nginx/ssl/barghvim.ir/fullchain.cer;
+  ssl_certificate_key     /etc/nginx/ssl/barghvim.ir/private.key;
+
+  access_log off;
+
+  return 301 https://barghvim.ir$request_uri;
+}
+
+server {
+  listen 443 ssl;
+  server_name barghvim.ir;
 
   ssl_certificate         /etc/nginx/ssl/barghvim.ir/fullchain.cer;
   ssl_certificate_key     /etc/nginx/ssl/barghvim.ir/private.key;
@@ -18,7 +32,43 @@ server {
   # its own logs. Turn the access log off rather than undo that at the edge.
   access_log off;
 
+  # The landing page is hosted on GitHub Pages, but it has to appear at the
+  # apex, and the apex must keep serving /{bill}.ics from the app below. DNS
+  # cannot split one hostname across two servers, so nginx relays exactly the
+  # bare "/" to Pages and passes everything else through.
+  #
+  # Two things will break this if forgotten:
+  #   * Setting a custom domain on the Pages site. Pages would then 301 to
+  #     barghvim.ir and the proxy would loop. Leave it on github.io.
+  #   * Splitting the page into separate .css/.js/.png files. Those would be
+  #     requested as barghvim.ir/assets/… , which falls through to the app's
+  #     /{bill} route and 400s. The page is a single self-contained file.
+  location = / {
+    proxy_pass https://mokhajavi75.github.io/barghvim/;
+    proxy_ssl_server_name on;
+    proxy_set_header Host mokhajavi75.github.io;
+    # Pages varies on Accept-Encoding; let nginx negotiate for itself.
+    proxy_set_header Accept-Encoding "";
+    proxy_connect_timeout 5s;
+    proxy_read_timeout 10s;
+    # GitHub is not reliably reachable from Iran — ghcr.io is already blocked
+    # from this host. Rather than show a 502, fall back to the app's own plain
+    # usage text, which says the one thing a visitor actually needs.
+    proxy_intercept_errors on;
+    error_page 500 502 503 504 = @app;
+  }
+
   location / {
+    proxy_pass http://127.0.0.1:8081;
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  # Same upstream as above, reachable by name so the landing page can fall
+  # back to it.
+  location @app {
     proxy_pass http://127.0.0.1:8081;
     proxy_http_version 1.1;
     proxy_set_header Host              $host;

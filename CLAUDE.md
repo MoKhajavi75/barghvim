@@ -109,6 +109,11 @@ These are the things that will bite you, and none are visible from a single file
 - **The feed must stay cacheable by clients.** `Cache-Control: public, max-age`
   plus a strong `ETag` lets a polling client answer itself with a 304. Reverting
   to `no-store` would put every poll back on the 20-an-hour budget.
+- **`GET /{$}` is the landing page's fallback, not dead code.** nginx serves
+  `/` from GitHub Pages, so the app's plain usage text is normally unreachable
+  through the domain. It is what `error_page` falls back to when GitHub is
+  unreachable from Iran, and it is still what you get running the binary
+  directly. Deleting it turns a blocked GitHub into a 502.
 - **Never log the raw URL.** The bill number is in the path, so the request
   logger records `r.Pattern` (the matched route) instead. Keep bill numbers out
   of logs.

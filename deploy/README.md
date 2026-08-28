@@ -39,6 +39,20 @@ Pinning a specific release instead of `latest`:
 IMAGE_TAG=1.0.0 docker compose up -d
 ```
 
+## Landing page
+
+`barghvim.ir/` serves a landing page; every other path is the calendar feed.
+The page itself is hosted on GitHub Pages and nginx relays the bare `/` to it,
+because DNS cannot point one hostname at both Pages and this VM.
+
+To enable it, in the repo's **Settings → Pages** set the source to
+`main` / `/docs`. Leave the custom domain field **empty** — setting it makes
+Pages redirect to `barghvim.ir` and the proxy loops.
+
+The page is `docs/index.html`, a single self-contained file. Keep it that way:
+a separate stylesheet would be fetched from `barghvim.ir/…`, which falls through
+to the app's `/{bill}` route and 400s.
+
 ## TLS
 
 Certificates are expected at `/etc/nginx/ssl/barghvim.ir/` as `fullchain.cer`
