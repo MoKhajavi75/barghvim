@@ -468,6 +468,14 @@
       .replace(/\D/g, '');
   }
 
+  // ...and back again for anything shown inside Persian prose. The input keeps
+  // ASCII on purpose: what it holds is what goes into the URL.
+  function fa(n) {
+    return String(n).replace(/\d/g, function (d) {
+      return String.fromCharCode(1776 + Number(d));
+    });
+  }
+
   function render() {
     var digits = ascii(bill.value);
 
@@ -478,7 +486,7 @@
       hint.classList.toggle('bad', digits.length > 13);
       hint.textContent = digits.length === 0
         ? 'ارقام فارسی هم قبول است.'
-        : digits.length + ' رقم از ۱۳ رقم';
+        : fa(digits.length) + ' رقم از ۱۳ رقم';
       return;
     }
 
