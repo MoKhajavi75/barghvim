@@ -1,7 +1,11 @@
 # Deploying barghvim
 
-The upstream برق من API is only reachable from inside Iran, so this has to run
+The upstream outage API is only reachable from inside Iran, so this has to run
 on a host with Iranian network access. It currently runs on the `m10r` VM.
+
+Upstream caps lookups at **20 calls an hour per source IP**, counted across the
+whole server rather than per subscriber. Everything below assumes one instance
+behind one IP; running a second instance halves the allowance each one gets.
 
 ## What lives where
 
@@ -49,12 +53,13 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ## Configuration
 
-The container needs no secrets — a subscriber's token and bill number arrive
-per request. Optional overrides go in `/opt/barghvim/.env`:
+The container needs no secrets — a bill number arrives per request. Optional
+overrides go in `/opt/barghvim/.env`:
 
 ```sh
 HOST_PORT=8081           # 8080 is taken by algofood
 LOG_LEVEL=info
-OUTAGE_WINDOW_DAYS=7
+CACHE_TTL=6h              # how long a fetched report is reused
+UPSTREAM_CALLS_PER_HOUR=18  # upstream allows 20/h per IP; leave headroom
 IMAGE_TAG=latest
 ```
